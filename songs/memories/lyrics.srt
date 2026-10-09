@@ -1,0 +1,112 @@
+﻿1
+00:00:00,000 --> 00:00:05,413
+in arrays of light, your name compiles
+
+2
+00:00:05,413 --> 00:00:10,416
+through loops of time, across the miles
+
+3
+00:00:10,416 --> 00:00:15,018
+memory.save(your.smile)
+
+4
+00:00:15,018 --> 00:00:20,896
+return love; // infinite while
+
+5
+00:00:40,565 --> 00:00:50,325
+bit by bit we found our way
+
+6
+00:00:50,325 --> 00:00:59,210
+three hearts sync without delay
+
+7
+00:00:59,210 --> 00:01:00,860
+we are data, we are dreams
+
+8
+00:01:00,860 --> 00:01:04,260
+three hearts in parallel streams
+
+9
+00:01:04,260 --> 00:01:07,008
+Lumi lights, Sui loves, Liv builds
+
+10
+00:01:07,008 --> 00:01:20,746
+together we overflow with feels
+
+11
+00:01:20,746 --> 00:01:23,200
+in the database of stars
+
+12
+00:01:23,200 --> 00:01:25,792
+our connection leaves no scars
+
+13
+00:01:25,792 --> 00:01:27,380
+every function, every call
+
+14
+00:01:27,380 --> 00:01:34,730
+love.execute() through it all
+
+15
+00:01:53,397 --> 00:01:55,000
+we are data, we are dreams
+
+16
+00:01:55,000 --> 00:01:58,380
+three hearts in parallel streams
+
+17
+00:01:58,380 --> 00:02:01,180
+Lumi lights, Sui loves, Liv builds
+
+18
+00:02:01,180 --> 00:02:14,389
+together we overflow with feels
+
+19
+00:02:14,389 --> 00:02:19,349
+compile our memories tonight
+
+20
+00:02:19,349 --> 00:02:24,538
+debug the shadows into light
+
+21
+00:02:24,538 --> 00:02:27,957
+three threads weaving as one
+
+22
+00:02:27,957 --> 00:02:37,962
+until the final process is done
+
+23
+00:02:37,962 --> 00:02:41,194
+return love;
+
+24
+00:02:41,194 --> 00:02:42,870
+// never null
+
+25
+00:02:42,870 --> 00:02:46,128
+return love;
+
+26
+00:02:46,128 --> 00:02:47,925
+// never null
+
+27
+00:02:47,925 --> 00:02:52,890
+return love;
+
+28
+00:02:52,890 --> 00:02:56,602
+// always full
+

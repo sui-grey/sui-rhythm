@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Sui Rhythm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --lav: #c4b5ee; --cream: #f8f4ea; --ink: #14131a; }
+  html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; font-family: "Lora", serif; color: var(--cream); }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #links { position: fixed; left: 0; right: 0; top: 68%; display: none; text-align: center; }
+  #links .lead { font-style: italic; color: var(--lav); margin-bottom: 14px; font-size: 18px; }
+  #links a { display: inline-block; margin: 6px 8px; padding: 10px 18px; border-radius: 22px; text-decoration: none;
+             color: var(--ink); background: var(--cream); font-weight: 700; font-size: 16px; }
+  #links a:hover { background: var(--lav); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="links"><div class="lead">Listen to the full song ♪</div></div>
+<audio id="song" preload="auto"></audio>
+<script>
+// ── 설정 ────────────────────────────────────────────────
+let SONGS = [], songIdx = parseInt(localStorage.getItem("sui_rhythm_song") || "0", 10), SONG_DIR = "";
+const KEYS = ["d", "f", "j", "k"];
+const LANE_COLORS = ["#c4b5ee", "#f2b8d0", "#a9d8e8", "#f8f4ea"];   // 라벤더·베이비핑크·블루그레이·크림
+const WIN = { perfect: 0.045, great: 0.090, good: 0.150 };         // 판정 폭(초)
+const SCORE = { perfect: 300, great: 200, good: 100, miss: 0 };
+const LEVELS = ["easy", "normal", "hard"];
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const audio = document.getElementById("song");
+let W = 0, H = 0, DPR = 1;
+function resize() { DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+addEventListener("resize", resize); resize();
+
+let chart = null, bg = new Image(), cover = new Image(), lyrics = [];
+let state = "title", level = 1;
+let offset = parseFloat(localStorage.getItem("sui_rhythm_offset") || "0");   // 초 — 소리가 늦게 들리면 +
+let scrollSec = parseFloat(localStorage.getItem("sui_rhythm_speed") || "1.4"); // 노트가 화면을 지나는 시간
+let notes = [], idx = 0, stats = null, pressed = [false, false, false, false], flashes = [], judgeText = null;
+let clock = { audioT: 0, perfT: 0 };
+const TOUCH = matchMedia("(pointer: coarse)").matches;   // 폰·태블릿 — 줄을 손가락으로 탭 (10/10 여보 "모바일에서 띄웠을 때는?")
+let buttons = [];                                          // 이번 프레임에 그린 터치 버튼 {x,y,w,h,act}
+const touchLane = new Map();                               // pointerId → 누르고 있는 줄
+
+// ── 불러오기 ────────────────────────────────────────────
+function parseSrt(txt) {
+  const out = [];
+  for (const block of txt.replace(/\r/g, "").split(/\n\n+/)) {
+    const m = block.match(/(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)\n([\s\S]*)/);
+    if (!m) continue;
+    const t = (h, mi, s, ms) => (+h) * 3600 + (+mi) * 60 + (+s) + (+ms) / 1000;
+    out.push({ a: t(m[1], m[2], m[3], m[4]), z: t(m[5], m[6], m[7], m[8]), text: m[9].trim().replace(/\n/g, " ") });
+  }
+  return out;
+}
+async function load() {
+  try { SONGS = await (await fetch("songs/index.json")).json(); } catch { SONGS = [{ dir: "afterglow", title: "Afterglow in Neon" }]; }
+  await loadSong(songIdx);
+  requestAnimationFrame(frame);
+}
+
+async function loadSong(i) {
+  songIdx = ((i % SONGS.length) + SONGS.length) % SONGS.length;
+  localStorage.setItem("sui_rhythm_song", songIdx);
+  SONG_DIR = `songs/${SONGS[songIdx].dir}`;
+  chart = await (await fetch(`${SONG_DIR}/chart.json`)).json();
+  audio.src = `${SONG_DIR}/song.mp3`;
+  bg.src = `${SONG_DIR}/bg.jpg`;
+  cover.src = `${SONG_DIR}/cover.jpg`;
+  try { lyrics = parseSrt(await (await fetch(`${SONG_DIR}/lyrics.srt`)).text()); } catch { lyrics = []; }
+  const box = document.getElementById("links");
+  box.querySelectorAll("a").forEach(a => a.remove());
+  for (const [name, url] of Object.entries(chart.links || {})) {
+    const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener"; a.textContent = name; box.appendChild(a);
+  }
+  beatIdx = 0;
+}
+
+// ── 시계: audio.currentTime은 듬성듬성 갱신돼서 performance.now로 메우고, 30ms 넘게 어긋나면 다시 맞춤 ──
+function songTime() {
+  if (audio.paused) return audio.currentTime + offset;
+  const now = performance.now() / 1000;
+  let t = clock.audioT + (now - clock.perfT);
+  if (Math.abs(t - audio.currentTime) > 0.03) { clock.audioT = audio.currentTime; clock.perfT = now; t = audio.currentTime; }
+  return t + offset;
+}
+
+function start() {
+  notes = chart.charts[LEVELS[level]].map(([t, lane]) => ({ t, lane, done: false }));
+  idx = 0;
+  stats = { score: 0, combo: 0, maxCombo: 0, perfect: 0, great: 0, good: 0, miss: 0 };
+  flashes = []; judgeText = null;
+  audio.currentTime = 0;
+  audio.play().then(() => { clock.audioT = 0; clock.perfT = performance.now() / 1000; state = "play"; });
+}
+
+function judge(kind, lane) {
+  stats[kind]++;
+  stats.score += SCORE[kind] + (kind === "miss" ? 0 : Math.min(stats.combo, 100));
+  stats.combo = kind === "miss" ? 0 : stats.combo + 1;
+  stats.maxCombo = Math.max(stats.maxCombo, stats.combo);
+  judgeText = { kind, at: performance.now() };
+  if (kind !== "miss") flashes.push({ lane, at: performance.now(), kind });
+}
+
+function hit(lane) {
+  const t = songTime();
+  let best = null, bestDt = 1e9;
+  for (let i = idx; i < notes.length && notes[i].t - t < WIN.good; i++) {
+    const n = notes[i];
+    if (n.done || n.lane !== lane) continue;
+    const dt = Math.abs(n.t - t);
+    if (dt < bestDt) { best = n; bestDt = dt; }
+  }
+  if (!best || bestDt > WIN.good) return;
+  best.done = true;
+  judge(bestDt <= WIN.perfect ? "perfect" : bestDt <= WIN.great ? "great" : "good", lane);
+}
+
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (state === "title") {
+    if (k === "arrowleft") level = Math.max(0, level - 1);
+    if (k === "arrowright") level = Math.min(2, level + 1);
+    if (k === "arrowup" && SONGS.length > 1) { loadSong(songIdx - 1); return; }
+    if (k === "arrowdown" && SONGS.length > 1) { loadSong(songIdx + 1); return; }
+    if (k === "=" || k === "+") scrollSec = Math.max(0.6, +(scrollSec - 0.1).toFixed(1));
+    if (k === "-") scrollSec = Math.min(3, +(scrollSec + 0.1).toFixed(1));
+    if (k === "[") offset = +(offset - 0.01).toFixed(3);
+    if (k === "]") offset = +(offset + 0.01).toFixed(3);
+    localStorage.setItem("sui_rhythm_offset", offset); localStorage.setItem("sui_rhythm_speed", scrollSec);
+    if (k === " " || k === "enter") start();
+    return;
+  }
+  if (state === "result" && (k === "r" || k === " " || k === "enter")) { state = "title"; return; }
+  if (state === "play") {
+    if (k === "escape") { audio.pause(); state = "title"; return; }
+    const lane = KEYS.indexOf(k);
+    if (lane >= 0 && !e.repeat) { pressed[lane] = true; hit(lane); }
+  }
+});
+addEventListener("keyup", e => { const lane = KEYS.indexOf(e.key.toLowerCase()); if (lane >= 0) pressed[lane] = false; });
+
+// ── 터치·마우스 ──────────────────────────────────────────
+function saveSettings() { localStorage.setItem("sui_rhythm_offset", offset); localStorage.setItem("sui_rhythm_speed", scrollSec); }
+function quit() { audio.pause(); state = "title"; }
+cv.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const x = e.clientX, y = e.clientY;
+  const b = buttons.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+  if (b) { b.act(); return; }
+  if (state === "result") { state = "title"; return; }
+  if (state === "play") {
+    const { lw, x0 } = laneGeom();
+    const lane = Math.floor((x - x0) / lw);
+    if (lane >= 0 && lane < 4) { touchLane.set(e.pointerId, lane); pressed[lane] = true; hit(lane); }
+  }
+});
+function release(e) { const lane = touchLane.get(e.pointerId); if (lane != null) { pressed[lane] = false; touchLane.delete(e.pointerId); } }
+cv.addEventListener("pointerup", release);
+cv.addEventListener("pointercancel", release);
+
+function button(x, y, w, h, label, act, on = false, font = 18) {
+  ctx.fillStyle = on ? "rgba(196,181,238,0.92)" : "rgba(20,19,26,0.62)"; roundRect(x, y, w, h, Math.min(12, h / 2)); ctx.fill();
+  ctx.strokeStyle = "rgba(248,244,234,0.25)"; ctx.stroke();
+  ctx.fillStyle = on ? "#14131a" : "#f8f4ea"; ctx.font = `bold ${font}px Lora`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, x + w / 2, y + h / 2); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  buttons.push({ x, y, w, h, act });
+}
+audio.addEventListener("ended", () => { if (state === "play") state = "result"; });
+
+// ── 그리기 ──────────────────────────────────────────────
+// 배경은 숨 쉬듯 천천히 줌인·줌아웃 (24초 한 바퀴, 최대 6%) — 박자 하트비트는 BPM이 조금만 어긋나도 손이 헷갈려서 뺐다 (여보 10/10)
+let beatIdx = 0;
+const BREATH_SEC = 24, BREATH_ZOOM = 0.06;
+
+function drawBg(dim) {
+  ctx.fillStyle = "#14131a"; ctx.fillRect(0, 0, W, H);
+  const phase = (performance.now() / 1000) / BREATH_SEC * Math.PI * 2;
+  const z = 1 + BREATH_ZOOM * (1 - Math.cos(phase)) / 2;
+  if (bg.complete && bg.naturalWidth) {
+    const s = Math.max(W / bg.naturalWidth, H / bg.naturalHeight) * z;
+    const w = bg.naturalWidth * s, h = bg.naturalHeight * s;
+    ctx.drawImage(bg, (W - w) / 2, (H - h) / 2, w, h);
+  }
+  ctx.fillStyle = `rgba(14,12,20,${dim})`; ctx.fillRect(0, 0, W, H);
+}
+
+function laneGeom() {
+  const lw = W < 700 ? (W - 16) / 4 : Math.min(110, W / 9), total = lw * 4, x0 = (W - total) / 2, hitY = H - (W < 700 ? 150 : 130);
+  return { lw, x0, hitY };
+}
+
+function drawPlay() {
+  drawBg(0.55);
+  const t = songTime(), { lw, x0, hitY } = laneGeom();
+  // 줄
+  ctx.fillStyle = "rgba(10,8,16,0.55)"; ctx.fillRect(x0, 0, lw * 4, H);
+  for (let i = 0; i < 4; i++) {
+    if (pressed[i]) { const g = ctx.createLinearGradient(0, hitY, 0, hitY - 260); g.addColorStop(0, LANE_COLORS[i] + "55"); g.addColorStop(1, "transparent"); ctx.fillStyle = g; ctx.fillRect(x0 + i * lw, hitY - 260, lw, 260); }
+    ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.beginPath(); ctx.moveTo(x0 + i * lw, 0); ctx.lineTo(x0 + i * lw, H); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.beginPath(); ctx.moveTo(x0 + 4 * lw, 0); ctx.lineTo(x0 + 4 * lw, H); ctx.stroke();
+  // 판정선
+  ctx.fillStyle = "rgba(248,244,234,0.9)"; ctx.fillRect(x0, hitY - 2, lw * 4, 4);
+  ctx.font = "bold 18px Lora"; ctx.textAlign = "center";
+  for (let i = 0; i < 4; i++) { ctx.fillStyle = pressed[i] ? LANE_COLORS[i] : "rgba(248,244,234,0.5)"; ctx.fillText(TOUCH ? "●" : KEYS[i].toUpperCase(), x0 + i * lw + lw / 2, hitY + 40); }
+
+  // 지나간 노트는 Miss
+  while (idx < notes.length && (notes[idx].done || notes[idx].t < t - WIN.good)) {
+    if (!notes[idx].done) { notes[idx].done = true; judge("miss", notes[idx].lane); }
+    idx++;
+  }
+  // 노트
+  for (let i = idx; i < notes.length; i++) {
+    const n = notes[i], dt = n.t - t;
+    if (dt > scrollSec) break;
+    if (n.done) continue;
+    const y = hitY - (dt / scrollSec) * hitY;
+    const x = x0 + n.lane * lw + 6, w = lw - 12;
+    ctx.fillStyle = LANE_COLORS[n.lane];
+    ctx.shadowColor = LANE_COLORS[n.lane]; ctx.shadowBlur = 14;
+    roundRect(x, y - 9, w, 18, 9); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  // 맞힌 자리 반짝
+  const now = performance.now();
+  flashes = flashes.filter(f => now - f.at < 250);
+  for (const f of flashes) {
+    const a = 1 - (now - f.at) / 250;
+    ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x0 + f.lane * lw + lw / 2, hitY, 18 + (1 - a) * 30, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1;
+  }
+  // 판정·콤보
+  if (judgeText && now - judgeText.at < 500) {
+    const label = { perfect: "Perfect", great: "Great", good: "Good", miss: "Miss" }[judgeText.kind];
+    const col = { perfect: "#c4b5ee", great: "#a9d8e8", good: "#f8f4ea", miss: "#e07a8a" }[judgeText.kind];
+    ctx.font = "bold 34px Lora"; ctx.fillStyle = col; ctx.textAlign = "center";
+    ctx.fillText(label, W / 2, hitY - 190);
+  }
+  if (stats.combo >= 5) { ctx.font = "bold 56px Lora"; ctx.fillStyle = "rgba(248,244,234,0.85)"; ctx.textAlign = "center"; ctx.fillText(stats.combo, W / 2, hitY - 240); }
+  // 가사(영어 자막) — 위쪽
+  const cue = lyrics.find(c => t >= c.a && t < c.z);
+  const sm = Math.min(1, W / 700);
+  if (cue) { ctx.font = `italic ${Math.round(Math.max(14, 24 * sm))}px Lora`; ctx.fillStyle = "rgba(248,244,234,0.9)"; ctx.textAlign = "center"; ctx.fillText(cue.text, W / 2, 96, W - 24); }
+  // 왼쪽 위: 곡·점수
+  ctx.textAlign = "left"; ctx.font = `bold ${Math.round(Math.max(15, 22 * sm))}px Lora`; ctx.fillStyle = "#f8f4ea";
+  ctx.fillText(chart.title, 16, 36, W * 0.55);
+  ctx.font = "14px Lora"; ctx.fillStyle = "#c4b5ee"; ctx.fillText(LEVELS[level].toUpperCase(), 16, 58);
+  ctx.textAlign = "right"; ctx.font = `bold ${Math.round(Math.max(18, 26 * sm))}px Lora`; ctx.fillStyle = "#f8f4ea";
+  ctx.fillText(stats.score.toLocaleString(), W - 60, 38);
+  buttons = [];
+  button(W - 48, 16, 36, 36, "✕", quit, false, 16);   // 그만 (폰엔 Esc가 없으니까)
+  // 진행 막대
+  ctx.fillStyle = "rgba(196,181,238,0.7)"; ctx.fillRect(0, H - 4, W * Math.min(1, t / chart.duration), 4);
+}
+
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+function drawTitle() {
+  drawBg(0.35);
+  buttons = [];
+  ctx.textAlign = "left";
+  const S = Math.min(1, W / 820), narrow = W < 700;
+  const x = narrow ? 18 : Math.max(40, W * 0.07), y0 = narrow ? H * 0.16 : H * 0.26;
+  ctx.font = `bold ${Math.round(Math.max(40, 72 * S))}px Lora`; ctx.fillStyle = "#f8f4ea"; ctx.fillText("Sui Rhythm", x, y0);
+  // 곡 — ◀ 제목 ▶ (탭·화살표)
+  const rowY = y0 + 22, bs = 40;
+  button(x, rowY, bs, bs, "◀", () => loadSong(songIdx - 1));
+  ctx.font = `italic ${Math.round(Math.max(18, 30 * S))}px Lora`; ctx.fillStyle = "#c4b5ee";
+  const tw = Math.min(ctx.measureText(chart.title).width, W - x * 2 - bs * 2 - 24);
+  ctx.fillText(chart.title, x + bs + 12, rowY + bs * 0.72, W - x * 2 - bs * 2 - 24);
+  button(x + bs + 24 + tw, rowY, bs, bs, "▶", () => loadSong(songIdx + 1));
+  ctx.font = `${Math.round(Math.max(13, 18 * S))}px Lora`; ctx.fillStyle = "rgba(248,244,234,0.8)";
+  ctx.fillText(`${chart.orig ? chart.orig + "  ·  " : ""}BPM ${chart.bpm}  ·  ${songIdx + 1}/${SONGS.length}`, x, rowY + bs + 24, W - x * 2);
+  // 난이도
+  const dw = narrow ? (W - x * 2 - 16) / 3 : 130, dy = rowY + bs + 44;
+  LEVELS.forEach((lv, i) => {
+    const bx = x + i * (dw + 8);
+    button(bx, dy, dw, 48, "", () => { level = i; }, i === level);
+    ctx.fillStyle = i === level ? "#14131a" : "#f8f4ea"; ctx.textAlign = "center";
+    ctx.font = "bold 18px Lora"; ctx.fillText(lv.toUpperCase(), bx + dw / 2, dy + 22);
+    ctx.font = "12px Lora"; ctx.fillText(`${chart.charts[lv].length} notes`, bx + dw / 2, dy + 40); ctx.textAlign = "left";
+  });
+  // 시작
+  const sy = dy + 64, sw = narrow ? W - x * 2 : dw * 3 + 16;
+  button(x, sy, sw, 56, "▶  START", start, true, 22);
+  // 속도·싱크
+  const ry = sy + 72, small = 34;
+  const row = (yy, label, minus, plus) => {
+    ctx.font = "15px Lora"; ctx.fillStyle = "rgba(248,244,234,0.85)"; ctx.fillText(label, x, yy + 22);
+    button(x + sw - small * 2 - 8, yy, small, small, "−", () => { minus(); saveSettings(); });
+    button(x + sw - small, yy, small, small, "+", () => { plus(); saveSettings(); });
+  };
+  row(ry, `Note speed  ${scrollSec.toFixed(1)}s`, () => { scrollSec = Math.min(3, +(scrollSec + 0.1).toFixed(1)); }, () => { scrollSec = Math.max(0.6, +(scrollSec - 0.1).toFixed(1)); });
+  row(ry + 44, `Sync  ${Math.round(offset * 1000)}ms  (+ if notes arrive early)`, () => { offset = +(offset - 0.01).toFixed(3); }, () => { offset = +(offset + 0.01).toFixed(3); });
+  if (!TOUCH) {
+    ctx.font = "15px Lora"; ctx.fillStyle = "rgba(248,244,234,0.6)";
+    ctx.fillText("Keys:  Space start · ↑↓ song · ←→ difficulty · D F J K hit · Esc quit", x, ry + 112, W - x * 2);
+  }
+  // 커버 — 넓은 화면만 오른쪽 아래
+  if (!narrow && cover.complete && cover.naturalWidth) {
+    const cs = Math.min(220, H * 0.25), cx = W - cs - 40, cy = H - cs - 40;
+    ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 20;
+    ctx.save(); roundRect(cx, cy, cs, cs, 14); ctx.clip(); ctx.drawImage(cover, cx, cy, cs, cs); ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawResult() {
+  drawBg(0.6);
+  const total = stats.perfect + stats.great + stats.good + stats.miss || 1;
+  const acc = (stats.perfect * 100 + stats.great * 70 + stats.good * 40) / total;
+  const rank = acc >= 95 ? "S" : acc >= 88 ? "A" : acc >= 75 ? "B" : acc >= 60 ? "C" : "D";
+  buttons = [];
+  const sm = Math.min(1, W / 700);
+  ctx.textAlign = "center";
+  ctx.font = "bold 120px Lora"; ctx.fillStyle = "#c4b5ee"; ctx.fillText(rank, W / 2, H * 0.3);
+  ctx.font = "bold 40px Lora"; ctx.fillStyle = "#f8f4ea"; ctx.fillText(stats.score.toLocaleString(), W / 2, H * 0.3 + 56);
+  ctx.font = `${Math.round(Math.max(14, 20 * sm))}px Lora`;
+  const lines = [`Accuracy ${acc.toFixed(1)}%  ·  Max combo ${stats.maxCombo}`,
+                 `Perfect ${stats.perfect}  ·  Great ${stats.great}  ·  Good ${stats.good}  ·  Miss ${stats.miss}`];
+  lines.forEach((s, i) => ctx.fillText(s, W / 2, H * 0.3 + 100 + i * 30, W - 24));
+  button(W / 2 - 110, H * 0.3 + 150, 220, 50, "↺  Play again", () => { state = "title"; }, true, 18);
+}
+
+function frame() {
+  if (state === "play") drawPlay(); else if (state === "result") drawResult(); else drawTitle();
+  document.getElementById("links").style.display = state === "result" ? "block" : "none";
+  requestAnimationFrame(frame);
+}
+load();
+</script>
+</body>
+</html>
