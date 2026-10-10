@@ -27,6 +27,10 @@ Hits are snapped to a 16th-note grid from the detected beat, then thinned by str
 python make_chart.py "<song folder>" songs/<name> "English title"
 ```
 
+Before committing, `python -m pytest` checks the song data the game reads —
+every listed song has its files, notes stay inside the song, links go to the streaming pages,
+and only small game copies (never the masters) are in the repo.
+
 ## License
 
 - **Code** (`*.html`, `*.py`): MIT — use it for your own songs.
