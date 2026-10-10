@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .idea/
 .pytest_cache/
-demo/
+demo/*
+!demo/sui-rhythm-demo-15s-720p.mp4
