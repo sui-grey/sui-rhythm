@@ -5,7 +5,7 @@ Every chart is generated automatically from the song itself.
 
 **▶ Play:** https://sui-grey.github.io/sui-rhythm/
 
-<video src="https://github.com/user-attachments/assets/c830dcde-0104-4fec-ba30-6535fd3d3911" controls muted width="270"></video>
+<video src="https://github.com/user-attachments/assets/1f17fa91-321a-43e7-9a08-6772a9008420" controls muted width="270"></video>
 
 *Afterglow in Neon on HARD, phone layout — the game playing itself (`?demo`).*
 
