@@ -5,6 +5,8 @@ Every chart is generated automatically from the song itself.
 
 **▶ Play:** https://sui-grey.github.io/sui-rhythm/
 
+<img src="demo.webp" width="270" alt="Afterglow in Neon on HARD, phone layout — every note hit">
+
 - Keyboard: `D` `F` `J` `K` to hit · `↑` `↓` song · `←` `→` difficulty · `Space` start · `Esc` quit
 - Phone / tablet: tap the four lanes
 - If notes feel early or late, nudge **Sync** on the title screen
@@ -43,6 +45,9 @@ Hits are snapped to a 16th-note grid from the detected beat, then thinned by str
 ```bash
 python make_chart.py "<song folder>" songs/<name> "English title"
 ```
+
+Want a clean clip of a chart? Open the game with `?demo&song=<folder>&level=hard` —
+it plays itself, every note Perfect, so you can record it (the GIF above is one).
 
 Before committing, `python -m pytest` checks the song data the game reads —
 every listed song has its files, notes stay inside the song, links go to the streaming pages,
