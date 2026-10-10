@@ -66,6 +66,36 @@ const TOUCH = matchMedia("(pointer: coarse)").matches;   // 폰·태블릿 — �
 let buttons = [];                                          // 이번 프레임에 그린 터치 버튼 {x,y,w,h,act}
 const touchLane = new Map();                               // pointerId → 누르고 있는 줄
 
+// ── ?demo — 노트가 판정선에 닿는 순간 저절로 Perfect. 홍보 영상 녹화용 (10/10 여보 "잘하는 녹화영상이 더 흥미있잖아")
+//    ?demo&song=<dir>&level=hard  /  window.__rec.start()·stop() = 캔버스를 webm으로(소리는 뒤에 song.mp3를 입힌다)
+const PARAMS = new URLSearchParams(location.search);
+const DEMO = PARAMS.has("demo");
+let demoPress = [0, 0, 0, 0];
+function demoTick(t) {
+  const now = performance.now();
+  for (let i = idx; i < notes.length && notes[i].t - t <= 0.004; i++) {
+    const n = notes[i]; if (n.done) continue;
+    pressed[n.lane] = true; demoPress[n.lane] = now; hit(n.lane);
+  }
+  for (let l = 0; l < 4; l++) if (demoPress[l] && now - demoPress[l] > 90) { pressed[l] = false; demoPress[l] = 0; }
+}
+window.__rec = (() => {
+  let rec = null, chunks = [];
+  return {
+    start(fps = 60) {
+      chunks = []; rec = new MediaRecorder(cv.captureStream(fps), { mimeType: "video/webm;codecs=vp9", videoBitsPerSecond: 12e6 });
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.start(200); window.__recStartedAt = performance.now();
+    },
+    stop() {
+      return new Promise(res => {
+        rec.onstop = () => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.readAsDataURL(new Blob(chunks, { type: "video/webm" })); };
+        rec.stop();
+      });
+    },
+  };
+})();
+
 // ── 불러오기 ────────────────────────────────────────────
 function parseSrt(txt) {
   const out = [];
@@ -79,8 +109,13 @@ function parseSrt(txt) {
 }
 async function load() {
   try { SONGS = await (await fetch("songs/index.json")).json(); } catch { SONGS = [{ dir: "afterglow", title: "Afterglow in Neon" }]; }
+  if (DEMO) {
+    const want = SONGS.findIndex(s => s.dir === PARAMS.get("song")); if (want >= 0) songIdx = want;
+    const lv = LEVELS.indexOf(PARAMS.get("level") || "hard"); level = lv >= 0 ? lv : 2;
+  }
   await loadSong(songIdx);
   requestAnimationFrame(frame);
+  if (DEMO) { window.__demoReady = true; }   // 녹화 스크립트가 이걸 보고 start()를 부른다
 }
 
 async function loadSong(i) {
@@ -115,7 +150,7 @@ function start() {
   stats = { score: 0, combo: 0, maxCombo: 0, perfect: 0, great: 0, good: 0, miss: 0 };
   flashes = []; judgeText = null;
   audio.currentTime = 0;
-  audio.play().then(() => { clock.audioT = 0; clock.perfT = performance.now() / 1000; state = "play"; });
+  audio.play().then(() => { clock.audioT = 0; clock.perfT = performance.now() / 1000; state = "play"; window.__playStartedAt = performance.now(); });
 }
 
 function judge(kind, lane) {
@@ -218,6 +253,7 @@ function laneGeom() {
 function drawPlay() {
   drawBg(0.55);
   const t = songTime(), { lw, x0, hitY } = laneGeom();
+  if (DEMO) demoTick(t);
   // 줄
   ctx.fillStyle = "rgba(10,8,16,0.55)"; ctx.fillRect(x0, 0, lw * 4, H);
   for (let i = 0; i < 4; i++) {
@@ -267,6 +303,9 @@ function drawPlay() {
   const cue = lyrics.find(c => t >= c.a && t < c.z);
   const sm = Math.min(1, W / 700);
   if (cue) { ctx.font = `italic ${Math.round(Math.max(14, 24 * sm))}px Lora`; ctx.fillStyle = "rgba(248,244,234,0.9)"; ctx.textAlign = "center"; ctx.fillText(cue.text, W / 2, 96, W - 24); }
+  // 위쪽 띠 — 막 나온 노트(흰 줄)가 점수 글자랑 같은 색이라 겹치면 안 읽혀서(10/10 데모 녹화에서 봄) HUD 뒤를 살짝 어둡게
+  const band = ctx.createLinearGradient(0, 0, 0, 84); band.addColorStop(0, "rgba(14,12,20,0.8)"); band.addColorStop(1, "rgba(14,12,20,0)");
+  ctx.fillStyle = band; ctx.fillRect(0, 0, W, 84);
   // 왼쪽 위: 곡·점수
   ctx.textAlign = "left"; ctx.font = `bold ${Math.round(Math.max(15, 22 * sm))}px Lora`; ctx.fillStyle = "#f8f4ea";
   ctx.fillText(chart.title, 16, 36, W * 0.55);
