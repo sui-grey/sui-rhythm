@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 demo/*
 !demo/sui-rhythm-demo-15s-720p.mp4
+!demo/sui-rhythm-demo-afterglow-hard-720p.mp4
