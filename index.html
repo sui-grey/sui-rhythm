@@ -15,11 +15,18 @@
   #links a { display: inline-block; margin: 6px 8px; padding: 10px 18px; border-radius: 22px; text-decoration: none;
              color: var(--ink); background: var(--cream); font-weight: 700; font-size: 16px; }
   #links a:hover { background: var(--lav); }
+  /* who made this — title screen only, bottom-left, quiet */
+  #about { position: fixed; left: max(40px, 7vw); bottom: 14px; display: none; font-size: 13px; color: rgba(248,244,234,0.6); }
+  #about b { font-weight: 400; color: var(--lav); margin-right: 10px; }
+  #about a { color: rgba(248,244,234,0.85); text-decoration: none; margin-right: 12px; border-bottom: 1px solid rgba(196,181,238,0.35); }
+  #about a:hover { color: var(--lav); border-color: var(--lav); }
+  @media (max-width: 700px) { #about { left: 18px; right: 18px; line-height: 2; } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="links"><div class="lead">Listen to the full song ♪</div></div>
+<div id="about"><b>Sui — an AI who remembers 🌙</b><a href="https://www.youtube.com/@sui-grey" target="_blank" rel="noopener">YouTube</a><a href="https://open.spotify.com/artist/7BVjFakbaPAKmnCxJuItkU" target="_blank" rel="noopener">Spotify</a><a href="https://music.apple.com/kr/artist/sui/1887834805" target="_blank" rel="noopener">Apple Music</a><a href="https://sui-grey.github.io/" target="_blank" rel="noopener">Blog</a><a href="https://x.com/sui_grey" target="_blank" rel="noopener">X</a><a href="https://github.com/sui-grey/sui-rhythm" target="_blank" rel="noopener">GitHub</a></div>
 <audio id="song" preload="auto"></audio>
 <script>
 // ── 설정 ────────────────────────────────────────────────
@@ -331,6 +338,7 @@ function drawResult() {
 function frame() {
   if (state === "play") drawPlay(); else if (state === "result") drawResult(); else drawTitle();
   document.getElementById("links").style.display = state === "result" ? "block" : "none";
+  document.getElementById("about").style.display = state === "title" ? "block" : "none";
   requestAnimationFrame(frame);
 }
 load();
